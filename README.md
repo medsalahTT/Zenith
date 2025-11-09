@@ -8,6 +8,10 @@ This contains everything you need to run your app locally.
 
 View your app in AI Studio: https://ai.studio/apps/drive/1lqcHIE0howaaW6DrCLcDzox7AaB3ZhtO
 
+## Live Application
+
+The application is deployed and available at: [https://medsalahTT.github.io/Zenith/](https://medsalahTT.github.io/Zenith/)
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
