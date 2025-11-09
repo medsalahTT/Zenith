@@ -7,9 +7,11 @@ interface TaskListProps {
   onToggleComplete: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (task: Task) => void;
+  selectedDate: Date;
+  isPastDate: boolean;
 }
 
-const TaskList: React.FC<TaskListProps> = ({ tasks, onToggleComplete, onDelete, onEdit }) => {
+const TaskList: React.FC<TaskListProps> = ({ tasks, onToggleComplete, onDelete, onEdit, selectedDate, isPastDate }) => {
   if (tasks.length === 0) {
     return (
       <div className="text-center py-16 px-4">
@@ -19,8 +21,10 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, onToggleComplete, onDelete, 
     );
   }
 
-  const completedTasks = tasks.filter(t => t.isCompleted);
-  const incompleteTasks = tasks.filter(t => !t.isCompleted);
+  const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+  
+  const completedTasks = tasks.filter(t => t.completedOn?.includes(dateString));
+  const incompleteTasks = tasks.filter(t => !t.completedOn?.includes(dateString));
 
   return (
     <div className="space-y-4">
@@ -31,6 +35,8 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, onToggleComplete, onDelete, 
             onToggleComplete={onToggleComplete}
             onDelete={onDelete}
             onEdit={onEdit}
+            isCompletedToday={false}
+            isPastDate={isPastDate}
             />
         ))}
 
@@ -43,10 +49,12 @@ const TaskList: React.FC<TaskListProps> = ({ tasks, onToggleComplete, onDelete, 
             onToggleComplete={onToggleComplete}
             onDelete={onDelete}
             onEdit={onEdit}
+            isCompletedToday={true}
+            isPastDate={isPastDate}
             />
         ))}
     </div>
   );
 };
 
-export default TaskList;
+export default React.memo(TaskList);

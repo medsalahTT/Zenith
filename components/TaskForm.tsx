@@ -1,21 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Task, DayOfWeek, DAYS_OF_WEEK } from '../types';
+import { Task, DayOfWeek, DAYS_OF_WEEK, Goal } from '../types';
 import { XIcon } from '../constants';
 
 interface TaskFormProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (task: Omit<Task, 'id' | 'isCompleted' | 'createdAt'>, id?: string) => void;
+  // FIX: Omitted 'deletedOn' from the task type to match the expected props from App.tsx.
+  onSubmit: (task: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn'>, id?: string) => void;
   initialTask?: Task | null;
   selectedDate: Date;
+  goals: Goal[];
 }
 
-const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialTask, selectedDate }) => {
+const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialTask, selectedDate, goals }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [duration, setDuration] = useState(25);
   const [repeatDays, setRepeatDays] = useState<DayOfWeek[]>([]);
   const [dates, setDates] = useState<string[]>([]);
+  const [goalId, setGoalId] = useState<string | undefined>(undefined);
   
   useEffect(() => {
     if (initialTask) {
@@ -24,6 +27,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
       setDuration(initialTask.duration);
       setRepeatDays(initialTask.repeatDays);
       setDates(initialTask.dates);
+      setGoalId(initialTask.goalId);
     } else {
       // Reset form
       setTitle('');
@@ -34,6 +38,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
       const month = String(selectedDate.getMonth() + 1).padStart(2, '0');
       const day = String(selectedDate.getDate()).padStart(2, '0');
       setDates([`${year}-${month}-${day}`]);
+      setGoalId(undefined);
     }
   }, [initialTask, isOpen, selectedDate]);
 
@@ -53,7 +58,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
     const finalDates = dates.length > 0 ? dates : [];
 
     onSubmit(
-      { title, description, duration, repeatDays, dates: finalDates },
+      { title, description, duration, repeatDays, dates: finalDates, goalId: goalId || undefined },
       initialTask?.id
     );
     onClose();
@@ -101,6 +106,21 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
               min="1"
               required
             />
+          </div>
+           <div>
+            <label htmlFor="goal" className="block text-sm font-medium text-gray-300">Link to Goal (Optional)</label>
+            <select
+                id="goal"
+                value={goalId || ''}
+                onChange={(e) => setGoalId(e.target.value)}
+                className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2"
+            >
+                <option value="">None</option>
+                {goals.map(goal => (
+                    <option key={goal.id} value={goal.id}>{goal.name}</option>
+                ))}
+
+            </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-300">Repeat Weekly On</label>

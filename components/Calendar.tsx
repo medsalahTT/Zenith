@@ -1,5 +1,5 @@
-import React from 'react';
-import { Task } from '../types';
+import React, { useMemo } from 'react';
+import { Task, DayOfWeek, DAYS_OF_WEEK } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon } from '../constants';
 
 interface CalendarProps {
@@ -9,36 +9,62 @@ interface CalendarProps {
 }
 
 const Calendar: React.FC<CalendarProps> = ({ selectedDate, onDateChange, tasks }) => {
-  const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-  const endOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
-  const startDate = new Date(startOfMonth);
-  startDate.setDate(startDate.getDate() - startDate.getDay());
-  
-  const days = [];
-  let currentDate = new Date(startDate);
-  
-  while (currentDate <= endOfMonth || days.length % 7 !== 0) {
-    days.push(new Date(currentDate));
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-
-  const taskDays = React.useMemo(() => {
-    const datesWithTasks = new Set<string>();
-    const dayOfWeekMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    const taskDayOfWeeks = new Set<number>();
+  const { days, daysWithTasks } = useMemo(() => {
+    const startOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    const endOfMonth = new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 0);
+    const startDate = new Date(startOfMonth);
+    startDate.setDate(startDate.getDate() - startDate.getDay());
     
-    tasks.forEach(task => {
-        task.dates.forEach(date => datesWithTasks.add(date));
-        task.repeatDays.forEach(day => taskDayOfWeeks.add(dayOfWeekMap[day]));
+    const localDays: Date[] = [];
+    let currentDate = new Date(startDate);
+    
+    while (currentDate <= endOfMonth || localDays.length % 7 !== 0) {
+      localDays.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+      if (localDays.length > 42) break; // Safety break
+    }
+
+    const activeTaskDays = new Set<string>();
+
+    localDays.forEach(day => {
+        const dayOfWeek: DayOfWeek = DAYS_OF_WEEK[day.getDay()];
+        const dateString = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+        const dateStartOfDay = new Date(day);
+        dateStartOfDay.setHours(0, 0, 0, 0);
+
+        const hasTasksOnThisDay = tasks.some(task => {
+            if (task.deletedOn?.includes(dateString)) {
+                return false;
+            }
+            
+            const taskCreatedAt = new Date(task.createdAt);
+            taskCreatedAt.setHours(0, 0, 0, 0);
+            
+            const isRepeatDay = task.repeatDays.includes(dayOfWeek);
+            const isSpecificDate = task.dates.includes(dateString);
+
+            if (!isRepeatDay && !isSpecificDate) {
+                return false;
+            }
+
+            if (isRepeatDay && dateStartOfDay < taskCreatedAt) {
+                return false;
+            }
+            
+            return true;
+        });
+
+        if (hasTasksOnThisDay) {
+            activeTaskDays.add(dateString);
+        }
     });
-    return { datesWithTasks, taskDayOfWeeks };
-  }, [tasks]);
+
+    return { days: localDays, daysWithTasks: activeTaskDays };
+  }, [tasks, selectedDate]);
 
   const hasTask = (date: Date): boolean => {
     const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    if (taskDays.datesWithTasks.has(dateString)) return true;
-    if (taskDays.taskDayOfWeeks.has(date.getDay())) return true;
-    return false;
+    return daysWithTasks.has(dateString);
   };
 
   const changeMonth = (amount: number) => {

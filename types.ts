@@ -6,8 +6,17 @@ export interface Task {
   title: string;
   description?: string;
   duration: number; // in minutes
-  isCompleted: boolean;
+  completedOn: string[]; // YYYY-MM-DD format for each completion date
   repeatDays: DayOfWeek[];
   dates: string[]; // YYYY-MM-DD format
   createdAt: number; // timestamp
+  goalId?: string;
+  deletedOn: string[]; // YYYY-MM-DD format for dates this task is "deleted"
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  targetDuration: number; // in minutes
+  createdAt: number;
 }
