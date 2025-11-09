@@ -9,39 +9,21 @@ import { PlusIcon } from './constants';
 import Header from './components/Header';
 import Stats from './components/Stats';
 import DeleteConfirmationDialog from './components/DeleteConfirmationDialog';
+import { getTasks, addTask as addTaskToDb, deleteTask as deleteTaskFromDb, getGoals, addGoal as addGoalToDb, deleteGoal as deleteGoalFromDb, migrateFromLocalStorage } from './db';
 
 const App: React.FC = () => {
-  const [tasks, setTasks] = useState<Task[]>(() => {
-    try {
-      const storedTasks = localStorage.getItem('tasks');
-      const parsedTasks = storedTasks ? JSON.parse(storedTasks) : [];
-      // Migration for old data structures
-      return parsedTasks.map((task: any) => {
-        const migratedTask = { ...task };
-        if (typeof task.isCompleted === 'boolean') {
-          delete migratedTask.isCompleted;
-          migratedTask.completedOn = [];
-        }
-        if (!task.deletedOn) {
-          migratedTask.deletedOn = [];
-        }
-        return migratedTask;
-      })
-    } catch (error) {
-      console.error("Failed to load tasks from localStorage", error);
-      return [];
-    }
-  });
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
 
-  const [goals, setGoals] = useState<Goal[]>(() => {
-    try {
-      const storedGoals = localStorage.getItem('goals');
-      return storedGoals ? JSON.parse(storedGoals) : [];
-    } catch (error) {
-      console.error("Failed to load goals from localStorage", error);
-      return [];
-    }
-  });
+  useEffect(() => {
+    const initApp = async () => {
+      await migrateFromLocalStorage();
+      const [tasksFromDb, goalsFromDb] = await Promise.all([getTasks(), getGoals()]);
+      setTasks(tasksFromDb);
+      setGoals(goalsFromDb);
+    };
+    initApp();
+  }, []);
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
@@ -51,29 +33,15 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'tasks' | 'goals' | 'stats'>('tasks');
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('tasks', JSON.stringify(tasks));
-    } catch (error) {
-      console.error("Failed to save tasks to localStorage", error);
-    }
-  }, [tasks]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('goals', JSON.stringify(goals));
-    } catch (error) {
-      console.error("Failed to save goals to localStorage", error);
-    }
-  }, [goals]);
-
-  const handleAddTask = useCallback((taskData: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn'>, id?: string) => {
+  const handleAddTask = useCallback(async (taskData: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn'>, id?: string) => {
     if (id) {
-      // Editing existing task
-      setTasks(prevTasks => prevTasks.map(t => t.id === id ? { ...t, ...taskData } : t));
+      const existingTask = tasks.find(t => t.id === id);
+      if (existingTask) {
+        const updatedTask = { ...existingTask, ...taskData };
+        await addTaskToDb(updatedTask);
+        setTasks(prevTasks => prevTasks.map(t => t.id === id ? updatedTask : t));
+      }
     } else {
-      // Adding new task
       const newTask: Task = {
         ...taskData,
         id: crypto.randomUUID(),
@@ -81,24 +49,25 @@ const App: React.FC = () => {
         deletedOn: [],
         createdAt: Date.now(),
       };
+      await addTaskToDb(newTask);
       setTasks(prevTasks => [...prevTasks, newTask]);
     }
-  }, []);
-  
-  const handleToggleComplete = useCallback((id: string) => {
+  }, [tasks]);
+
+  const handleToggleComplete = useCallback(async (id: string) => {
     const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
-    setTasks(prevTasks => prevTasks.map(t => {
-      if (t.id === id) {
-        const completedOn = t.completedOn || [];
-        const isCompleted = completedOn.includes(dateString);
-        const newCompletedOn = isCompleted
-          ? completedOn.filter(d => d !== dateString)
-          : [...completedOn, dateString];
-        return { ...t, completedOn: newCompletedOn };
-      }
-      return t;
-    }));
-  }, [selectedDate]);
+    const task = tasks.find(t => t.id === id);
+    if (task) {
+      const completedOn = task.completedOn || [];
+      const isCompleted = completedOn.includes(dateString);
+      const newCompletedOn = isCompleted
+        ? completedOn.filter(d => d !== dateString)
+        : [...completedOn, dateString];
+      const updatedTask = { ...task, completedOn: newCompletedOn };
+      await addTaskToDb(updatedTask);
+      setTasks(prevTasks => prevTasks.map(t => t.id === id ? updatedTask : t));
+    }
+  }, [selectedDate, tasks]);
 
   const handleDeleteRequest = useCallback((id: string) => {
     const task = tasks.find(t => t.id === id);
@@ -107,23 +76,21 @@ const App: React.FC = () => {
     }
   }, [tasks]);
 
-  const handleDeleteForToday = useCallback(() => {
+  const handleDeleteForToday = useCallback(async () => {
     if (!taskToDelete) return;
     const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
-    setTasks(prevTasks => prevTasks.map(t => {
-      if (t.id === taskToDelete.id) {
-        const deletedOn = t.deletedOn || [];
-        if (!deletedOn.includes(dateString)) {
-            return { ...t, deletedOn: [...deletedOn, dateString] };
-        }
-      }
-      return t;
-    }));
+    const deletedOn = taskToDelete.deletedOn || [];
+    if (!deletedOn.includes(dateString)) {
+      const updatedTask = { ...taskToDelete, deletedOn: [...deletedOn, dateString] };
+      await addTaskToDb(updatedTask);
+      setTasks(prevTasks => prevTasks.map(t => t.id === taskToDelete.id ? updatedTask : t));
+    }
     setTaskToDelete(null);
   }, [taskToDelete, selectedDate]);
 
-  const handleDeleteAll = useCallback(() => {
+  const handleDeleteAll = useCallback(async () => {
     if (!taskToDelete) return;
+    await deleteTaskFromDb(taskToDelete.id);
     setTasks(prevTasks => prevTasks.filter(t => t.id !== taskToDelete.id));
     setTaskToDelete(null);
   }, [taskToDelete]);
@@ -141,32 +108,47 @@ const App: React.FC = () => {
     setEditingTask(null);
     setIsTaskFormOpen(true);
   };
-  
+
   const handleCloseForm = () => {
     setIsTaskFormOpen(false);
     setEditingTask(null);
   };
 
-  const handleUpsertGoal = useCallback((goalData: Omit<Goal, 'id' | 'createdAt'>, id?: string) => {
+  const handleUpsertGoal = useCallback(async (goalData: Omit<Goal, 'id' | 'createdAt'>, id?: string) => {
     if (id) {
-      setGoals(prev => prev.map(g => g.id === id ? { ...g, ...goalData } : g));
+      const existingGoal = goals.find(g => g.id === id);
+      if (existingGoal) {
+        const updatedGoal = { ...existingGoal, ...goalData };
+        await addGoalToDb(updatedGoal);
+        setGoals(prev => prev.map(g => g.id === id ? updatedGoal : g));
+      }
     } else {
       const newGoal: Goal = {
         ...goalData,
         id: crypto.randomUUID(),
         createdAt: Date.now(),
       };
+      await addGoalToDb(newGoal);
       setGoals(prev => [...prev, newGoal]);
     }
-  }, []);
+  }, [goals]);
 
-  const handleDeleteGoal = useCallback((id: string) => {
+  const handleDeleteGoal = useCallback(async (id: string) => {
     if (window.confirm('Are you sure you want to delete this goal? This will unlink it from all associated tasks.')) {
-        setGoals(prev => prev.filter(g => g.id !== id));
-        // Unlink tasks
-        setTasks(prev => prev.map(t => t.goalId === id ? { ...t, goalId: undefined } : t));
+      await deleteGoalFromDb(id);
+      setGoals(prev => prev.filter(g => g.id !== id));
+      // Unlink tasks
+      const updatedTasks = tasks.map(t => {
+        if (t.goalId === id) {
+          const updatedTask = { ...t, goalId: undefined };
+          addTaskToDb(updatedTask); // Update task in DB
+          return updatedTask;
+        }
+        return t;
+      });
+      setTasks(updatedTasks);
     }
-  }, []);
+  }, [tasks]);
 
   const handleOpenAddGoalForm = () => {
     setEditingGoal(null);
