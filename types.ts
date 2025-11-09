@@ -12,6 +12,7 @@ export interface Task {
   createdAt: number; // timestamp
   goalId?: string;
   deletedOn: string[]; // YYYY-MM-DD format for dates this task is "deleted"
+  timeSpent: { [date: string]: number }; // seconds spent per date (YYYY-MM-DD)
 }
 
 export interface Goal {

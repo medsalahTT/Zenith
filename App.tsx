@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Calendar from './components/Calendar';
 import TaskList from './components/TaskList';
 import TaskForm from './components/TaskForm';
@@ -9,6 +9,8 @@ import { PlusIcon } from './constants';
 import Header from './components/Header';
 import Stats from './components/Stats';
 import DeleteConfirmationDialog from './components/DeleteConfirmationDialog';
+import { useTimer } from './hooks/useTimer';
+import FocusView from './components/FocusView';
 
 const App: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>(() => {
@@ -24,6 +26,9 @@ const App: React.FC = () => {
         }
         if (!task.deletedOn) {
           migratedTask.deletedOn = [];
+        }
+        if (!task.timeSpent) {
+            migratedTask.timeSpent = {};
         }
         return migratedTask;
       })
@@ -50,6 +55,14 @@ const App: React.FC = () => {
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [currentView, setCurrentView] = useState<'tasks' | 'goals' | 'stats'>('tasks');
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [activeTimerTaskId, setActiveTimerTaskId] = useState<string | null>(null);
+  const [timerInitialSeconds, setTimerInitialSeconds] = useState(0);
+
+  const tasksRef = useRef(tasks);
+  const justResetTaskIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    tasksRef.current = tasks;
+  }, [tasks]);
 
 
   useEffect(() => {
@@ -68,7 +81,117 @@ const App: React.FC = () => {
     }
   }, [goals]);
 
-  const handleAddTask = useCallback((taskData: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn'>, id?: string) => {
+  const activeTaskForTimer = useMemo(
+    () => tasks.find(t => t.id === activeTimerTaskId),
+    [tasks, activeTimerTaskId]
+  );
+  
+  const handleTimerEnd = useCallback(() => {
+    if (activeTaskForTimer) {
+        const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+        setTasks(prevTasks => prevTasks.map(t => {
+            if (t.id === activeTaskForTimer.id) {
+                const completedOn = t.completedOn || [];
+                const newCompletedOn = completedOn.includes(dateString) ? completedOn : [...completedOn, dateString];
+                
+                // On timer end, mark the full duration as spent for that day
+                const newTimeSpent = { ...(t.timeSpent || {}) };
+                newTimeSpent[dateString] = t.duration * 60;
+
+                return { ...t, completedOn: newCompletedOn, timeSpent: newTimeSpent };
+            }
+            return t;
+        }));
+    }
+    setActiveTimerTaskId(null);
+  }, [activeTaskForTimer, selectedDate]);
+  
+  const { timeLeft, isRunning, start, pause } = useTimer({
+    initialSeconds: timerInitialSeconds,
+    onEnd: handleTimerEnd,
+  });
+
+  const memoizedPauseHandler = useCallback(() => {
+    if (!activeTaskForTimer) return;
+
+    const timeElapsedThisSession = timerInitialSeconds - timeLeft;
+    
+    if (timeElapsedThisSession > 0) {
+        const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+        
+        setTasks(prevTasks => prevTasks.map(t => {
+            if (t.id === activeTaskForTimer.id) {
+                const timeSpent = t.timeSpent || {};
+                const timeAlreadySpent = timeSpent[dateString] || 0;
+                const newTotalTimeSpent = timeAlreadySpent + timeElapsedThisSession;
+                return {
+                    ...t,
+                    timeSpent: {
+                        ...timeSpent,
+                        [dateString]: newTotalTimeSpent
+                    }
+                };
+            }
+            return t;
+        }));
+    }
+
+    pause();
+    setActiveTimerTaskId(null);
+  }, [pause, activeTaskForTimer, timerInitialSeconds, timeLeft, selectedDate]);
+
+
+  useEffect(() => {
+    if (activeTimerTaskId && !isRunning) {
+      start();
+    }
+  }, [activeTimerTaskId, isRunning, start]);
+
+  const handleStartTimer = useCallback((taskId: string) => {
+    const task = tasksRef.current.find(t => t.id === taskId);
+    if (!task) return;
+
+    const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+    let timeSpentToday = task.timeSpent?.[dateString] || 0;
+
+    // If the task was just reset, ignore any stale timeSpent data from state and start from scratch.
+    if (justResetTaskIdRef.current === taskId) {
+      timeSpentToday = 0;
+      justResetTaskIdRef.current = null; // Consume the flag so it only applies once
+    }
+
+    const remainingSeconds = (task.duration * 60) - timeSpentToday;
+
+    if (remainingSeconds > 0) {
+        setTimerInitialSeconds(Math.round(remainingSeconds));
+        setActiveTimerTaskId(taskId);
+    }
+  }, [selectedDate]);
+
+  const handleResetTimer = useCallback((taskId: string) => {
+    if (taskId === activeTimerTaskId) {
+        pause();
+        setActiveTimerTaskId(null);
+    }
+    
+    const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
+    
+    setTasks(prevTasks => prevTasks.map(t => {
+      if (t.id === taskId) {
+        const newTimeSpent = { ...(t.timeSpent || {}) };
+        delete newTimeSpent[dateString];
+        return { ...t, timeSpent: newTimeSpent };
+      }
+      return t;
+    }));
+
+    // Set a flag to communicate to handleStartTimer that this task should start from 0,
+    // overcoming the stale state in case of a rapid reset-and-start action.
+    justResetTaskIdRef.current = taskId;
+  }, [selectedDate, activeTimerTaskId, pause]);
+
+
+  const handleAddTask = useCallback((taskData: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn' | 'timeSpent'>, id?: string) => {
     if (id) {
       // Editing existing task
       setTasks(prevTasks => prevTasks.map(t => t.id === id ? { ...t, ...taskData } : t));
@@ -80,12 +203,16 @@ const App: React.FC = () => {
         completedOn: [],
         deletedOn: [],
         createdAt: Date.now(),
+        timeSpent: {},
       };
       setTasks(prevTasks => [...prevTasks, newTask]);
     }
   }, []);
   
   const handleToggleComplete = useCallback((id: string) => {
+    if (id === activeTimerTaskId) {
+        memoizedPauseHandler();
+    }
     const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
     setTasks(prevTasks => prevTasks.map(t => {
       if (t.id === id) {
@@ -94,11 +221,20 @@ const App: React.FC = () => {
         const newCompletedOn = isCompleted
           ? completedOn.filter(d => d !== dateString)
           : [...completedOn, dateString];
-        return { ...t, completedOn: newCompletedOn };
+        
+        // Reset time spent for the day if toggling completion
+        const newTimeSpent = { ...(t.timeSpent || {}) };
+        if (!isCompleted) { // if we are marking it as complete
+            newTimeSpent[dateString] = t.duration * 60; // mark as fully spent
+        } else { // if we are un-marking it
+            delete newTimeSpent[dateString];
+        }
+
+        return { ...t, completedOn: newCompletedOn, timeSpent: newTimeSpent };
       }
       return t;
     }));
-  }, [selectedDate]);
+  }, [selectedDate, activeTimerTaskId, memoizedPauseHandler]);
 
   const handleDeleteRequest = useCallback((id: string) => {
     const task = tasks.find(t => t.id === id);
@@ -109,24 +245,32 @@ const App: React.FC = () => {
 
   const handleDeleteForToday = useCallback(() => {
     if (!taskToDelete) return;
+     if (taskToDelete.id === activeTimerTaskId) {
+        memoizedPauseHandler();
+    }
     const dateString = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}`;
     setTasks(prevTasks => prevTasks.map(t => {
       if (t.id === taskToDelete.id) {
         const deletedOn = t.deletedOn || [];
+        const newTimeSpent = { ...(t.timeSpent || {}) };
+        delete newTimeSpent[dateString];
         if (!deletedOn.includes(dateString)) {
-            return { ...t, deletedOn: [...deletedOn, dateString] };
+            return { ...t, deletedOn: [...deletedOn, dateString], timeSpent: newTimeSpent };
         }
       }
       return t;
     }));
     setTaskToDelete(null);
-  }, [taskToDelete, selectedDate]);
+  }, [taskToDelete, selectedDate, activeTimerTaskId, memoizedPauseHandler]);
 
   const handleDeleteAll = useCallback(() => {
     if (!taskToDelete) return;
+    if (taskToDelete.id === activeTimerTaskId) {
+        memoizedPauseHandler();
+    }
     setTasks(prevTasks => prevTasks.filter(t => t.id !== taskToDelete.id));
     setTaskToDelete(null);
-  }, [taskToDelete]);
+  }, [taskToDelete, activeTimerTaskId, memoizedPauseHandler]);
 
   const handleCloseDeleteDialog = useCallback(() => {
     setTaskToDelete(null);
@@ -218,42 +362,64 @@ const App: React.FC = () => {
   }, [tasks, selectedDate]);
 
   const goalsWithProgress: GoalWithProgress[] = useMemo(() => {
-    const achievedDurations = new Map<string, number>();
+    const achievedDurations = new Map<string, number>(); // in seconds
     tasks.forEach(task => {
-        if (task.goalId && task.completedOn.length > 0) {
-            const current = achievedDurations.get(task.goalId) || 0;
-            achievedDurations.set(task.goalId, current + (task.duration * task.completedOn.length));
+        if (task.goalId) {
+            const taskTotalSeconds = Object.values(task.timeSpent || {}).reduce((sum, seconds) => sum + seconds, 0);
+            if (taskTotalSeconds > 0) {
+                 const current = achievedDurations.get(task.goalId) || 0;
+                 achievedDurations.set(task.goalId, current + taskTotalSeconds);
+            }
         }
     });
     
     return goals.map(goal => ({
         ...goal,
-        achievedDuration: achievedDurations.get(goal.id) || 0,
+        // convert achieved seconds to minutes for comparison with target
+        achievedDuration: (achievedDurations.get(goal.id) || 0) / 60,
     })).sort((a,b) => a.createdAt - b.createdAt);
   }, [tasks, goals]);
 
   const productivityStats = useMemo(() => {
-    const totalCompletions = tasks.reduce((sum, task) => sum + task.completedOn.length, 0);
-    const totalTimeFocused = tasks.reduce((sum, task) => sum + (task.duration * task.completedOn.length), 0);
+    let totalSecondsFocused = 0;
+    const completedTasksDetailedMap = new Map<string, { title: string; completionCount: number; totalSeconds: number }>();
+
+    tasks.forEach(task => {
+        const taskTotalSeconds = Object.values(task.timeSpent || {}).reduce((sum, seconds) => sum + seconds, 0);
+        totalSecondsFocused += taskTotalSeconds;
+
+        if (task.completedOn.length > 0 || taskTotalSeconds > 0) {
+            if (!completedTasksDetailedMap.has(task.id)) {
+                completedTasksDetailedMap.set(task.id, {
+                    title: task.title,
+                    completionCount: 0,
+                    totalSeconds: 0,
+                });
+            }
+            const stat = completedTasksDetailedMap.get(task.id)!;
+            stat.completionCount = task.completedOn.length;
+            stat.totalSeconds = taskTotalSeconds;
+        }
+    });
     
-    const tasksCompleted = totalCompletions;
-    const avgSessionDuration = tasksCompleted > 0 ? totalTimeFocused / tasksCompleted : 0;
+    const totalTimeFocusedInMinutes = totalSecondsFocused / 60;
+    const tasksCompleted = tasks.reduce((sum, task) => sum + task.completedOn.length, 0);
+    const avgSessionDuration = tasksCompleted > 0 ? totalTimeFocusedInMinutes / tasksCompleted : 0;
     
     const goalsAchieved = goalsWithProgress.filter(goal => goal.achievedDuration >= goal.targetDuration).length;
     const totalGoals = goals.length;
 
-    const completedTasksDetailed = tasks
-        .filter(task => task.completedOn.length > 0)
-        .map(task => ({
-            id: task.id,
-            title: task.title,
-            completionCount: task.completedOn.length,
-            totalDuration: task.duration * task.completedOn.length,
+    const completedTasksDetailed = Array.from(completedTasksDetailedMap.entries())
+        .map(([id, data]) => ({
+            id,
+            title: data.title,
+            completionCount: data.completionCount,
+            totalDuration: data.totalSeconds / 60, // convert to minutes
         }))
         .sort((a, b) => b.totalDuration - a.totalDuration);
 
     return {
-        totalTimeFocused,
+        totalTimeFocused: totalTimeFocusedInMinutes,
         tasksCompleted,
         avgSessionDuration,
         goalsAchieved,
@@ -306,6 +472,8 @@ const App: React.FC = () => {
                   onToggleComplete={handleToggleComplete}
                   onDelete={handleDeleteRequest}
                   onEdit={handleOpenEditForm}
+                  onStartTimer={handleStartTimer}
+                  onResetTimer={handleResetTimer}
                   selectedDate={selectedDate}
                   isPastDate={isPastDate}
                 />
@@ -353,6 +521,13 @@ const App: React.FC = () => {
         onDeleteToday={handleDeleteForToday}
         onDeleteAll={handleDeleteAll}
       />
+      {activeTaskForTimer && (
+        <FocusView
+            task={activeTaskForTimer}
+            timeLeft={timeLeft}
+            onPause={memoizedPauseHandler}
+        />
+      )}
     </div>
   );
 };

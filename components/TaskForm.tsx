@@ -5,8 +5,7 @@ import { XIcon } from '../constants';
 interface TaskFormProps {
   isOpen: boolean;
   onClose: () => void;
-  // FIX: Omitted 'deletedOn' from the task type to match the expected props from App.tsx.
-  onSubmit: (task: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn'>, id?: string) => void;
+  onSubmit: (task: Omit<Task, 'id' | 'completedOn' | 'createdAt' | 'deletedOn' | 'timeSpent'>, id?: string) => void;
   initialTask?: Task | null;
   selectedDate: Date;
   goals: Goal[];
@@ -75,7 +74,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
         <h2 className="text-2xl font-bold mb-6">{initialTask ? 'Edit Task' : 'Add New Task'}</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-300">Title</label>
+            <label htmlFor="title" className="block text-sm font-medium text-gray-300">Task Title</label>
             <input
               id="title"
               type="text"
@@ -96,7 +95,7 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
             />
           </div>
           <div>
-            <label htmlFor="duration" className="block text-sm font-medium text-gray-300">Timer Duration (minutes)</label>
+            <label htmlFor="duration" className="block text-sm font-medium text-gray-300">Duration (minutes)</label>
             <input
               id="duration"
               type="number"
@@ -107,23 +106,8 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
               required
             />
           </div>
-           <div>
-            <label htmlFor="goal" className="block text-sm font-medium text-gray-300">Link to Goal (Optional)</label>
-            <select
-                id="goal"
-                value={goalId || ''}
-                onChange={(e) => setGoalId(e.target.value)}
-                className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2"
-            >
-                <option value="">None</option>
-                {goals.map(goal => (
-                    <option key={goal.id} value={goal.id}>{goal.name}</option>
-                ))}
-
-            </select>
-          </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300">Repeat Weekly On</label>
+            <span className="block text-sm font-medium text-gray-300">Repeat on</span>
             <div className="mt-2 grid grid-cols-4 sm:grid-cols-7 gap-2">
               {DAYS_OF_WEEK.map((day) => (
                 <button
@@ -140,7 +124,23 @@ const TaskForm: React.FC<TaskFormProps> = ({ isOpen, onClose, onSubmit, initialT
                 </button>
               ))}
             </div>
-             <p className="text-xs text-gray-400 mt-2">Note: Repeating tasks will appear every week on the selected days. Specific dates below are for one-time tasks.</p>
+             {repeatDays.length === 0 && (
+                <p className="text-xs text-gray-500 mt-2">No repeat days selected. This task will only occur on the date(s) specified below.</p>
+             )}
+          </div>
+           <div>
+            <label htmlFor="goalId" className="block text-sm font-medium text-gray-300">Link to Goal (Optional)</label>
+            <select
+              id="goalId"
+              value={goalId || ''}
+              onChange={(e) => setGoalId(e.target.value || undefined)}
+              className="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm p-2"
+            >
+              <option value="">No Goal</option>
+              {goals.map(goal => (
+                <option key={goal.id} value={goal.id}>{goal.name}</option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end space-x-3 pt-4">
             <button

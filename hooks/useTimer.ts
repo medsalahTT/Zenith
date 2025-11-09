@@ -1,18 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface UseTimerProps {
-  initialMinutes: number;
+  initialSeconds: number;
   onEnd?: () => void;
 }
 
-export const useTimer = ({ initialMinutes, onEnd }: UseTimerProps) => {
-  const [timeLeft, setTimeLeft] = useState(initialMinutes * 60);
+export const useTimer = ({ initialSeconds, onEnd }: UseTimerProps) => {
+  const [timeLeft, setTimeLeft] = useState(initialSeconds);
   const [isRunning, setIsRunning] = useState(false);
   const intervalRef = useRef<number | null>(null);
+  const onEndRef = useRef(onEnd);
+
+  // Keep onEnd callback fresh to prevent stale closures
+  useEffect(() => {
+    onEndRef.current = onEnd;
+  }, [onEnd]);
+
 
   const start = useCallback(() => {
-    setIsRunning(true);
-  }, []);
+    if (!isRunning) {
+      setIsRunning(true);
+    }
+  }, [isRunning]);
 
   const pause = useCallback(() => {
     setIsRunning(false);
@@ -20,12 +29,12 @@ export const useTimer = ({ initialMinutes, onEnd }: UseTimerProps) => {
 
   const reset = useCallback(() => {
     setIsRunning(false);
-    setTimeLeft(initialMinutes * 60);
-  }, [initialMinutes]);
+    setTimeLeft(initialSeconds);
+  }, [initialSeconds]);
 
   useEffect(() => {
-    setTimeLeft(initialMinutes * 60);
-  }, [initialMinutes]);
+    setTimeLeft(initialSeconds);
+  }, [initialSeconds]);
 
   useEffect(() => {
     if (isRunning) {
@@ -34,8 +43,8 @@ export const useTimer = ({ initialMinutes, onEnd }: UseTimerProps) => {
           if (prevTime <= 1) {
             clearInterval(intervalRef.current!);
             setIsRunning(false);
-            if (onEnd) {
-              onEnd();
+            if (onEndRef.current) {
+              onEndRef.current();
             }
             return 0;
           }
@@ -53,7 +62,7 @@ export const useTimer = ({ initialMinutes, onEnd }: UseTimerProps) => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [isRunning, onEnd]);
+  }, [isRunning]);
   
   return { timeLeft, isRunning, start, pause, reset };
 };

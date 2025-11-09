@@ -1,18 +1,30 @@
 import React from 'react';
 import { Task } from '../types';
-import Timer from './Timer';
-import { EditIcon, TrashIcon } from '../constants';
+import { EditIcon, TrashIcon, PlayIcon, RotateCwIcon } from '../constants';
 
 interface TaskItemProps {
   task: Task;
   onToggleComplete: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (task: Task) => void;
+  onStartTimer: (id: string) => void;
+  onResetTimer: (id: string) => void;
   isCompletedToday: boolean;
   isPastDate: boolean;
+  timeSpentToday: number; // in seconds
 }
 
-const TaskItem: React.FC<TaskItemProps> = ({ task, onToggleComplete, onDelete, onEdit, isCompletedToday, isPastDate }) => {
+const TaskItem: React.FC<TaskItemProps> = ({ task, onToggleComplete, onDelete, onEdit, onStartTimer, onResetTimer, isCompletedToday, isPastDate, timeSpentToday }) => {
+  const remainingSeconds = (task.duration * 60) - timeSpentToday;
+  const hasBeenStarted = timeSpentToday > 0;
+
+  const formatTime = (seconds: number) => {
+    if (seconds < 0) seconds = 0;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  
   return (
     <div className={`p-4 rounded-lg transition-all duration-300 ${isCompletedToday ? 'bg-gray-800/50' : 'bg-gray-800'}`}>
       <div className="flex items-start justify-between">
@@ -34,9 +46,33 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggleComplete, onDelete, o
                 {task.description}
               </p>
             )}
+            {hasBeenStarted && !isCompletedToday && (
+              <div className="mt-2 text-xs text-indigo-400 font-mono bg-indigo-500/10 px-2 py-1 rounded-md inline-block">
+                  Time Remaining: {formatTime(remainingSeconds)}
+              </div>
+            )}
           </div>
         </div>
-        {!isCompletedToday && !isPastDate && <div className="ml-4"><Timer duration={task.duration} /></div>}
+        <div className="ml-4 flex-shrink-0 flex items-center space-x-2">
+             {hasBeenStarted && !isCompletedToday && !isPastDate && (
+              <button
+                onClick={() => onResetTimer(task.id)}
+                className="p-2 rounded-full bg-gray-700 text-gray-400 hover:bg-yellow-600 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                aria-label={`Reset timer for ${task.title}`}
+              >
+                <RotateCwIcon className="h-5 w-5" />
+              </button>
+            )}
+             {!isCompletedToday && !isPastDate && (
+                <button 
+                    onClick={() => onStartTimer(task.id)}
+                    className="p-2 rounded-full bg-gray-700 hover:bg-indigo-600 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-gray-900"
+                    aria-label={`Start timer for ${task.title}`}
+                >
+                    <PlayIcon className="h-5 w-5" />
+                </button>
+             )}
+        </div>
       </div>
       <div className="flex justify-end items-center space-x-3 mt-4">
         <button onClick={() => onEdit(task)} className="text-gray-400 hover:text-indigo-400 transition-colors p-1" aria-label={`Edit task ${task.title}`}>
