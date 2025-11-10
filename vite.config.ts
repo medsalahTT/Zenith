@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => {
       },
       base: '/Zenith/',
       plugins: [react()],
+      build: {
+        outDir: 'docs',
+      },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),
